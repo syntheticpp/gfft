@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2009 by Volodymyr Myrnyy                                *
+ *   Copyright (C) 2009-2014 by Vladimir Mirnyy                            *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -19,15 +19,25 @@
 #ifndef __sint_h
 #define __sint_h
 
+typedef long int_t;
+typedef unsigned long uint_t;
+typedef unsigned short short_t;
+
 /// Integer number metacontainer.
 /**     Integer N is wrapped into container class to handle integers and other
         compile-time number-classes using the same operation classes specializing
         them for particular number-container.
  \param N an integer number
 */
-template<int N>
+template<int_t N>
 struct SInt {
-   enum { Value = N };
+  static const int_t value = N;
+};
+
+/// Static unsigned integer class holder with additional definition of ID
+template<int_t N>
+struct SIntID : public SInt<N> {
+   static const int_t ID = N-1;
 };
 
 #define STATIC_INTEGER_CLASS(Type, Name) \
@@ -41,7 +51,7 @@ STATIC_INTEGER_CLASS(int, int)
 STATIC_INTEGER_CLASS(unsigned int, uint)
 STATIC_INTEGER_CLASS(long, long)
 STATIC_INTEGER_CLASS(unsigned long, ulong)
-
 #undef STATIC_INTEGER_CLASS
+
 
 #endif

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2006-2009 by Volodymyr Myrnyy                           *
+ *   Copyright (C) 2006-2014 by Vladimir Mirnyy                            *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -24,13 +24,12 @@
 #include "gfftdoc.h"
 #endif
 
-#include "loki/Typelist.h"
-#include "loki/Factory.h"
-#include "loki/Singleton.h"
+#include "Typelist.h"
+#include "Factory.h"
+#include "Singleton.h"
 
 #include "finit.h"
 #include "gfftomp.h"
-#include "gfftstdalg.h"
 #include "gfftpolicy.h"
 #include "gfftcaller.h"
 #include "gfftgen.h"

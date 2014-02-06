@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2006-2009 by Volodymyr Myrnyy                           *
+ *   Copyright (C) 2006-2014 by Vladimir Mirnyy                            *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -16,410 +16,353 @@
 #define __gfftalg_h
 
 /** \file
-    \brief Recursive algorithms and short-radix FFT specifications
+    \brief Recursive FFT algorithms 
 */
 
-#include "metafunc.h"
+#include "gfftspec.h"
+#include "gfftfactor.h"
+#include "gfftswap.h"
 
+#include "metacomplex.h"
+#include "metaroot.h"
 
 namespace GFFT {
 
 using namespace MF;
 
-/// Specialization for complex-valued radix 2 FFT in-place
-/// \tparam T is value type
-/// \param data is the array of length 4, containing two complex numbers (real,imag,real,imag).
-template<typename T>
-inline void _spec2(T* data) {
-      T tr = data[2];
-      T ti = data[3];
-      data[2] = data[0]-tr;
-      data[3] = data[1]-ti;
-      data[0] += tr;
-      data[1] += ti;
-}
+
+static const int_t StaticLoopLimit = 8;
 
 
-template<typename T>
-struct TempTypeTrait;
-
-template<>
-struct TempTypeTrait<float> {
-   typedef double Result;
-};
-
-template<>
-struct TempTypeTrait<double> {
-   typedef long double Result;
-};
-
-template<typename T,
-template<typename> class Complex>
-struct TempTypeTrait<Complex<T> > {
-   typedef typename TempTypeTrait<T>::Result Result;
-};
-
-template<typename T, typename A,
-template<typename,typename> class Complex>
-struct TempTypeTrait<Complex<T,A> > {
-   typedef typename TempTypeTrait<T>::Result Result;
-};
-
-// template<typename T, typename A,
-// template<typename,typename> class Complex>
-// struct TempTypeTrait<Complex<T,A> > {
-//    typedef T Result;
-// };
-
-
-/// Danielson-Lanczos section of the decimation-in-time FFT version
-/**
-\tparam N current transform length
-\tparam T value type of the data array
-\tparam S sign of the transform: 1 - forward, -1 - backward
-
-This template class implements resursive metaprogram, which
-runs funciton apply() twice recursively at the beginning of the function apply()
-with the half of the transform length N
-until the simplest case N=2 has been reached. Then function \a _spec2 is called.
-Therefore, it has two specializations for N=2 and N=1 (the trivial and empty case).
-\sa InFreq
-*/
-template<unsigned long N, typename T, int S>
-class InTime {
+template<int_t K, int_t M, typename T, int S, class W1, int NIter = 1, class W = W1>
+class IterateInTime
+{
    typedef typename TempTypeTrait<T>::Result LocalVType;
-   InTime<N/2,T,S> next;
-public:
-   void apply(T* data) {
+   typedef Compute<typename W::Re,2> WR;
+   typedef Compute<typename W::Im,2> WI;
+   static const int_t M2 = M*2;
+   static const int_t N = K*M;
 
-      LocalVType wtemp,tempr,tempi,wr,wi,wpr,wpi,t;
+   typedef typename GetNextRoot<NIter+1,N,W1,W,2>::Result Wnext;
+   IterateInTime<K,M,T,S,W1,NIter+1,Wnext> next;
+   DFTk_inp<K,M2,T,S> spec_inp;
+   
+public:
+   void apply(T* data) 
+   {
+      const LocalVType wr = WR::value();
+      const LocalVType wi = WI::value();
+
+      spec_inp.apply(data + (NIter-1)*2, &wr, &wi);
 
       next.apply(data);
-      next.apply(data+N);
-
-//    Change dynamic calculation to the static one
-//      wtemp = sin(S*M_PI/N);
-      t = Sin<N,1,LocalVType>::value();
-      wpr = -2.0*t*t;
-//      wpi = -sin(2*M_PI/N);
-      wpi = -S*Sin<N,2,LocalVType>::value();
-      wr = 1.0;
-      wi = 0.0;
-      for (unsigned long i=0; i<N; i+=2) {
-        tempr = data[i+N]*wr - data[i+N+1]*wi;
-        tempi = data[i+N]*wi + data[i+N+1]*wr;
-        data[i+N] = data[i]-tempr;
-        data[i+N+1] = data[i+1]-tempi;
-        data[i] += tempr;
-        data[i+1] += tempi;
-
-        wtemp = wr;
-        wr += wr*wpr - wi*wpi;
-        wi += wi*wpr + wtemp*wpi;
-      }
    }
 };
 
-/*
-/// Specialization for N=4, decimation-in-time
-template<typename T, int S>
-class InTime<4,T,S> {
+// Last step of the loop
+template<int_t K, int_t M, typename T, int S, class W1, class W>
+class IterateInTime<K,M,T,S,W1,M,W> 
+{
+//    typedef typename RList::Head H;
+   typedef typename TempTypeTrait<T>::Result LocalVType;
+   typedef Compute<typename W::Re,2> WR;
+   typedef Compute<typename W::Im,2> WI;
+   static const int_t M2 = M*2;
+   static const int_t N = K*M;
+   DFTk_inp<K,M2,T,S> spec_inp;
 public:
-   void apply(T* data) {
-      T tr = data[2];
-      T ti = data[3];
-      data[2] = data[0]-tr;
-      data[3] = data[1]-ti;
-      data[0] += tr;
-      data[1] += ti;
-      tr = data[6];
-      ti = data[7];
-      data[6] = S*(data[5]-ti);
-      data[7] = S*(tr-data[4]);
-      data[4] += tr;
-      data[5] += ti;
+   void apply(T* data) 
+   {
+      const LocalVType wr = WR::value();
+      const LocalVType wi = WI::value();
 
-      tr = data[4];
-      ti = data[5];
-      data[4] = data[0]-tr;
-      data[5] = data[1]-ti;
-      data[0] += tr;
-      data[1] += ti;
-      tr = data[6];
-      ti = data[7];
-      data[6] = data[2]-tr;
-      data[7] = data[3]-ti;
-      data[2] += tr;
-      data[3] += ti;
+      spec_inp.apply(data + (M-1)*2, &wr, &wi);
    }
 };
-*/
 
-// Specialization for N=2, decimation-in-time
-template<typename T, int S>
-class InTime<2,T,S> {
+// First step in the loop
+template<int_t K, int_t M, typename T, int S, class W1, class W>
+class IterateInTime<K,M,T,S,W1,1,W> {
+   static const int_t M2 = M*2;
+   DFTk_inp<K,M2,T,S> spec_inp;
+   IterateInTime<K,M,T,S,W1,2,W> next;
 public:
-   void apply(T* data) { _spec2(data); }
+   void apply(T* data) 
+   {
+      spec_inp.apply(data);
+      next.apply(data);
+   }
 };
 
-// Specialization for N=1, decimation-in-time
-template<typename T, int S>
-class InTime<1,T,S> {
-public:
-   void apply(T* data) { }
-};
 
-/// Danielson-Lanczos section of the decimation-in-frequency FFT version
+/// In-place scaled FFT algorithm
 /**
-\tparam N current transform length
+\tparam K first factor
+\tparam M second factor (N=K*M) 
 \tparam T value type of the data array
 \tparam S sign of the transform: 1 - forward, -1 - backward
+\tparam W compile-time root of unity
+\tparam doStaticLoop rely on template instantiation loop IterateInTime (only for short loops)
 
-This template class implements resursive metaprogram, which
-runs funciton apply() twice recursively at the end of the function apply()
-with the half of the transform length N
-until the simplest case N=2 has been reached. Then function \a _spec2 is called.
-Therefore, it has two specializations for N=2 and N=1 (the trivial and empty case).
-\sa InTime
+The notation for this template class follows SPIRAL. 
+The class performs DFT(k) with the Kronecker product by the mxm identity matrix Im
+and twiddle factors (T).
+\sa InTime, IterateInTime
 */
-template<unsigned long N, typename T, int S>
-class InFreq {
+template<int_t K, int_t M, typename T, int S, class W, bool doStaticLoop>
+class DFTk_x_Im_T;
+
+// Rely on the static template loop
+template<int_t K, int_t M, typename T, int S, class W>
+class DFTk_x_Im_T<K,M,T,S,W,true> : public IterateInTime<K,M,T,S,W> {};
+
+// General implementation
+template<int_t K, int_t M, typename T, int S, class W>
+class DFTk_x_Im_T<K,M,T,S,W,false>
+{
    typedef typename TempTypeTrait<T>::Result LocalVType;
-   InFreq<N/2,T,S> next;
+   typedef Compute<typename W::Re,2> WR;
+   typedef Compute<typename W::Im,2> WI;
+   static const int_t N = K*M;
+   static const int_t M2 = M*2;
+   DFTk_inp<K,M2,T,S> spec_inp;
 public:
-   void apply(T* data) {
+   void apply(T* data) 
+   {
+      spec_inp.apply(data);
 
-      LocalVType wtemp,tempr,tempi,wr,wi,wpr,wpi;
-//    Change dynamic calculation to the static one
-//      wtemp = sin(M_PI/N);
-      wtemp = Sin<N,1,LocalVType>::value();
-      wpr = -2.0*wtemp*wtemp;
-//      wpi = -sin(2*M_PI/N);
-      wpi = -S*Sin<N,2,LocalVType>::value();
-      wr = 1.0;
-      wi = 0.0;
-      for (unsigned long i=0; i<N; i+=2) {
-        tempr = data[i] - data[i+N];
-        tempi = data[i+1] - data[i+N+1];
-        data[i] += data[i+N];
-        data[i+1] += data[i+N+1];
-        data[i+N] = tempr*wr - tempi*wi;
-        data[i+N+1] = tempi*wr + tempr*wi;
+      LocalVType wr[K-1], wi[K-1], wpr[K-1], wpi[K-1], t;
 
-        wtemp = wr;
-        wr += wr*wpr - wi*wpi;
-        wi += wi*wpr + wtemp*wpi;
+      // W = (wpr[0], wpi[0])
+      wpr[0] = WR::value();
+      wpi[0] = WI::value();
+      //t = Sin<N,1,LocalVType>::value();
+//       wpr[0] = 1 - 2.0*t*t;
+//       wpi[0] = -S*Sin<N,2,LocalVType>::value();
+      
+      // W^i = (wpr[i], wpi[i])
+      for (int_t i=0; i<K-2; ++i) {
+	wpr[i+1] = wpr[i]*wpr[0] - wpi[i]*wpi[0];
+	wpi[i+1] = wpr[i]*wpi[0] + wpr[0]*wpi[i];
       }
+      
+      for (int_t i=0; i<K-1; ++i) {
+	wr[i] = wpr[i];
+	wi[i] = wpi[i];
+      }
+      
+      for (int_t i=2; i<M2; i+=2) {
+	spec_inp.apply(data+i, wr, wi);
 
-      next.apply(data);
-      next.apply(data+N);
+	for (int_t i=0; i<K-1; ++i) {
+	  t = wr[i];
+	  wr[i] = t*wpr[i] - wi[i]*wpi[i];
+	  wi[i] = wi[i]*wpr[i] + t*wpi[i];
+	}
+      }
    }
+  
 };
 
-// Specialization for N=4, decimation-in-frequency
-// template<typename T, int S>
-// class InFreq<4,T,S> {
-// public:
-//    void apply(T* data) {
-//       T tr = data[4];
-//       T ti = data[5];
-//       data[4] = data[0]-tr;
-//       data[5] = data[1]-ti;
-//       data[0] += tr;
-//       data[1] += ti;
-//       tr = data[6];
-//       ti = data[7];
-//       data[6] = S*(data[3]-ti);
-//       data[7] = S*(tr-data[2]);
-//       data[2] += tr;
-//       data[3] += ti;
-// 
-//       tr = data[2];
-//       ti = data[3];
-//       data[2] = data[0]-tr;
-//       data[3] = data[1]-ti;
-//       data[0] += tr;
-//       data[1] += ti;
-//       tr = data[6];
-//       ti = data[7];
-//       data[6] = data[4]-tr;
-//       data[7] = data[5]-ti;
-//       data[4] += tr;
-//       data[5] += ti;
-//    }
-// };
-
-// Specialization for N=2, decimation-in-frequency
-template<typename T, int S>
-class InFreq<2,T,S> {
+// Specialization for radix 3
+template<int_t M, typename T, int S, class W>
+class DFTk_x_Im_T<3,M,T,S,W,false> {
+   typedef typename TempTypeTrait<T>::Result LocalVType;
+   typedef Compute<typename W::Re,2> WR;
+   typedef Compute<typename W::Im,2> WI;
+   static const int_t N = 3*M;
+   static const int_t M2 = M*2;
+   DFTk_inp<3,M2,T,S> spec_inp;
 public:
-   void apply(T* data) { _spec2(data); }
-};
+   void apply(T* data) 
+   {
+      spec_inp.apply(data);
 
-// Specialization for N=1, decimation-in-frequency
-template<typename T, int S>
-class InFreq<1,T,S> {
-public:
-   void apply(T* data) { }
-};
+      LocalVType wr[2],wi[2],t;
 
+      // W = (wpr1, wpi1)
+//       t = Sin<N,1,LocalVType>::value();
+//       const LocalVType wpr1 = 1 - 2.0*t*t;
+//       const LocalVType wpi1 = -S*Sin<N,2,LocalVType>::value();
+      const LocalVType wpr1 = WR::value();
+      const LocalVType wpi1 = WI::value();
+      
+      // W^2 = (wpr2, wpi2)
+      const LocalVType wpr2 = wpr1*wpr1 - wpi1*wpi1;
+      const LocalVType wpi2 = 2*wpr1*wpi1;
+      
+      wr[0] = wpr1;
+      wi[0] = wpi1;
+      wr[1] = wpr2;
+      wi[1] = wpi2;
+      for (int_t i=2; i<M2; i+=2) {
+	spec_inp.apply(data+i, wr, wi);
 
-/// Binary reordering of array elements
-/*!
-\tparam N length of the data
-\tparam T value type
-
-This is C-like implementation. It has been written very 
-similar to the one presented in the book 
-"Numerical recipes in C++".
-\sa GFFTswap2
-*/
-template<unsigned long N, typename T>
-class GFFTswap {
-public:
-   void apply(T* data) {
-     unsigned long m,j=0;
-     for (unsigned long i=0; i<2*N-1; i+=2) {
-        if (j>i) {
-            std::swap(data[j], data[i]);
-            std::swap(data[j+1], data[i+1]);
-        }
-        m = N;
-        while (m>=2 && j>=m) {
-            j -= m;
-            m >>= 1;
-        }
-        j += m;
-     }
-   }
-};
-
-
-/// Binary reordering of array elements
-/*!
-\tparam N length of the data
-\tparam T value type
-
-This is second version of binary reordering.
-It is based on template class recursion
-similar to InTime and InFreq template classes,
-where member function apply() is called twice recursively
-building the parameters n and r, which are at last the
-indexes of exchanged data values.
-
-This version is slightly slower than GFFTswap, but 
-allows parallelization of this algorithm, which is
-implemented in template class GFFTswap2OMP.
-\sa GFFTswap, GFFTswap2OMP
-*/
-template<unsigned int P, typename T,
-unsigned int I=0>
-class GFFTswap2 {
-   static const unsigned long BN = 1<<(I+1);
-   static const unsigned long BR = 1<<(P-I);
-   GFFTswap2<P,T,I+1> next;
-public:
-   void apply(T* data, unsigned long n=0, unsigned long r=0) {
-      next.apply(data,n,r);
-      next.apply(data,n|BN,r|BR);
-   }
-};
-
-template<unsigned int P, typename T>
-class GFFTswap2<P,T,P> {
-public:
-   void apply(T* data, unsigned long n=0, unsigned long r=0) {
-      if (n>r) {
-        swap(data[n],data[r]);
-        swap(data[n+1],data[r+1]);
+        t = wr[0];
+        wr[0] = t*wpr1 - wi[0]*wpi1;
+        wi[0] = wi[0]*wpr1 + t*wpi1;
+        t = wr[1];
+        wr[1] = t*wpr2 - wi[1]*wpi2;
+        wi[1] = wi[1]*wpr2 + t*wpi2;
       }
    }
 };
 
-
-/// Reordering of data for real-valued transforms
-/*!
-\tparam N length of the data
-\tparam T value type
-\tparam S sign of the transform: 1 - forward, -1 - backward
-*/
-template<unsigned long N, typename T, int S>
-class Separate {
+// Specialization for radix 2
+template<int_t M, typename T, int S, class W>
+class DFTk_x_Im_T<2,M,T,S,W,false> {
    typedef typename TempTypeTrait<T>::Result LocalVType;
-   static const int M = (S==1) ? 2 : 1;
+   typedef Compute<typename W::Re,2> WR;
+   typedef Compute<typename W::Im,2> WI;
+   static const int_t N = 2*M;
+   DFTk_inp<2,N,T,S> spec_inp;
 public:
-   void apply(T* data) {
-      unsigned long i,i1,i2,i3,i4;
-      LocalVType wtemp,wr,wi,wpr,wpi;
-      LocalVType h1r,h1i,h2r,h2i,h3r,h3i;
-      wtemp = Sin<2*N,1,LocalVType>::value();
-      wpr = -2.*wtemp*wtemp;
-      wpi = -S*Sin<N,1,LocalVType>::value();
-      wr = 1.+wpr;
+   void apply(T* data) 
+   {
+      spec_inp.apply(data);
+
+      LocalVType wr,wi,t;
+//       t = Sin<N,1,LocalVType>::value();
+//       const LocalVType wpr = 1-2.0*t*t;
+//       const LocalVType wpi = -S*Sin<N,2,LocalVType>::value();
+      const LocalVType wpr = WR::value();
+      const LocalVType wpi = WI::value();
+      wr = wpr;
       wi = wpi;
-      for (i=1; i<N/2; ++i) {
-        i1 = i+i;
-        i2 = i1+1;
-        i3 = 2*N-i1;
-        i4 = i3+1;
-        h1r = 0.5*(data[i1]+data[i3]);
-        h1i = 0.5*(data[i2]-data[i4]);
-        h2r = S*0.5*(data[i2]+data[i4]);
-        h2i =-S*0.5*(data[i1]-data[i3]);
-        h3r = wr*h2r - wi*h2i;
-        h3i = wr*h2i + wi*h2r;
-        data[i1] = h1r + h3r;
-        data[i2] = h1i + h3i;
-        data[i3] = h1r - h3r;
-        data[i4] =-h1i + h3i;
+      for (int_t i=2; i<N; i+=2) {
+	spec_inp.apply(data+i, &wr, &wi);
 
-        wtemp = wr;
-        wr += wr*wpr - wi*wpi;
-        wi += wi*wpr + wtemp*wpi;
-      }
-      h1r = data[0];
-      data[0] = M*0.5*(h1r + data[1]);
-      data[1] = M*0.5*(h1r - data[1]);
-
-      if (N>1) data[N+1] = -data[N+1];
-   }
-};
-
-// Policy for a definition of forward FFT
-template<unsigned long N, typename T>
-struct Forward {
-   enum { Sign = 1 };
-   void apply(T*) { }
-};
-
-template<unsigned long N, typename T,
-template<typename> class Complex>
-struct Forward<N,Complex<T> > {
-   enum { Sign = 1 };
-   void apply(Complex<T>*) { }
-};
-
-// Policy for a definition of backward FFT
-template<unsigned long N, typename T>
-struct Backward {
-   enum { Sign = -1 };
-   void apply(T* data) {
-      for (T* i=data; i<data+2*N; ++i) *i/=N;
-   }
-};
-
-template<unsigned long N, typename T,
-template<typename> class Complex>
-struct Backward<N,Complex<T> > {
-   enum { Sign = -1 };
-   void apply(Complex<T>* data) {
-      for (unsigned long i=0; i<N; ++i) {
-        data[i]/=N;
+        t = wr;
+        wr = wr*wpr - wi*wpi;
+        wi = wi*wpr + t*wpi;
       }
    }
 };
 
+/// In-place decimation-in-time FFT version
+/**
+\tparam N current transform length
+\tparam NFact factorization list
+\tparam T value type of the data array
+\tparam S sign of the transform: 1 - forward, -1 - backward
+\tparam W1 compile-time root of unity
 
+This is the core of decimation in-time FFT algorithm:
+Strided DFT runs K times recursively, where the next 
+factor K is taken from the compile-time list.
+The scaled DFT is performed afterwards.
+\sa InFreq, DFTk_x_Im_T
+*/
+template<int_t N, typename NFact, typename T, int S, class W1, int_t LastK = 1>
+class InTime;
+
+// template<int_t N, typename Head, typename Tail, typename T, int S, class W1, int_t LastK>
+// class InTime<N, Loki::Typelist<Head,Tail>, T, S, W1, LastK>
+// {
+//   // Not implemented, because not allowed
+//   // Transforms in-place are allowed for powers of primes only!!!
+// };
+
+template<int_t N, typename Head, typename T, int S, class W1, int_t LastK>
+class InTime<N, Loki::Typelist<Head,Loki::NullType>, T, S, W1, LastK>
+{
+   typedef typename TempTypeTrait<T>::Result LocalVType;
+   static const int_t K = Head::first::value;
+   static const int_t M = N/K;
+   static const int_t M2 = M*2;
+   static const int_t N2 = N*2;
+   
+   typedef typename IPowBig<W1,K>::Result WK;
+   typedef Loki::Typelist<Pair<typename Head::first, SInt<Head::second::value-1> >, Loki::NullType> NFactNext;
+   InTime<M,NFactNext,T,S,WK,K*LastK> dft_str;
+   DFTk_x_Im_T<K,M,T,S,W1,(N<=StaticLoopLimit)> dft_scaled;
+//   DFTk_x_Im_T<K,M,T,S,W1,false> dft_scaled;
+public:
+   void apply(T* data) 
+   {
+     // run strided DFT recursively K times
+      for (int_t m=0; m < N2; m+=M2) 
+	dft_str.apply(data + m);
+
+      dft_scaled.apply(data);
+   }
+};
+
+// Take the next factor from the list
+template<int_t N, int_t K, typename Tail, typename T, int S, class W1, int_t LastK>
+class InTime<N, Loki::Typelist<Pair<SInt<K>, SInt<0> >,Tail>, T, S, W1, LastK>
+: public InTime<N, Tail, T, S, W1, LastK> {};
+
+
+// Specialization for a prime N
+template<int_t N, typename T, int S, class W1, int_t LastK>
+class InTime<N,Loki::Typelist<Pair<SInt<N>, SInt<1> >, Loki::NullType>,T,S,W1,LastK> {
+  DFTk_inp<N, 2, T, S> spec_inp;
+public:
+  void apply(T* data) 
+  { 
+    spec_inp.apply(data);
+  }
+};
+
+
+/// Out-of-place decimation-in-time FFT version
+/**
+\tparam N current transform length
+\tparam NFact factorization list
+\tparam T value type of the data array
+\tparam S sign of the transform: 1 - forward, -1 - backward
+\tparam W1 compile-time root of unity
+
+This is the core of decimation in-time FFT algorithm:
+Strided DFT runs K times recursively, where the next 
+factor K is taken from the compile-time list.
+The scaled DFT is performed afterwards.
+\sa DFTk_x_Im_T
+*/
+template<int_t N, typename NFact, typename T, int S, class W1, int_t LastK = 1>
+class InTimeOOP;
+
+template<int_t N, typename Head, typename Tail, typename T, int S, class W1, int_t LastK>
+class InTimeOOP<N, Loki::Typelist<Head,Tail>, T, S, W1, LastK>
+{
+   typedef typename TempTypeTrait<T>::Result LocalVType;
+   static const int_t K = Head::first::value;
+   static const int_t M = N/K;
+   static const int_t M2 = M*2;
+   static const int_t N2 = N*2;
+   static const int_t LastK2 = LastK*2;
+   
+   typedef typename IPowBig<W1,K>::Result WK;
+   typedef Loki::Typelist<Pair<typename Head::first, SInt<Head::second::value-1> >, Tail> NFactNext;
+   InTimeOOP<M,NFactNext,T,S,WK,K*LastK> dft_str;
+   DFTk_x_Im_T<K,M,T,S,W1,(N<=StaticLoopLimit)> dft_scaled;
+//   DFTk_x_Im_T<K,M,T,S,W1,false> dft_scaled;
+public:
+
+   void apply(const T* src, T* dst) 
+   {
+     // run strided DFT recursively K times
+      int_t lk = 0;
+      for (int_t m = 0; m < N2; m+=M2, lk+=LastK2)
+        dft_str.apply(src + lk, dst + m);
+
+      dft_scaled.apply(dst);
+   }
+};
+
+// Take the next factor from the list
+template<int_t N, int_t K, typename Tail, typename T, int S, class W1, int_t LastK>
+class InTimeOOP<N, Loki::Typelist<Pair<SInt<K>, SInt<0> >,Tail>, T, S, W1, LastK>
+: public InTimeOOP<N, Tail, T, S, W1, LastK> {};
+
+
+// Specialization for prime N
+template<int_t N, typename T, int S, class W1, int_t LastK>
+class InTimeOOP<N,Loki::Typelist<Pair<SInt<N>, SInt<1> >, Loki::NullType>,T,S,W1,LastK> 
+: public DFTk<N, LastK*2, 2, T, S> {};
+
+  
 }  //namespace DFT
 
 #endif /*__gfftalg_h*/

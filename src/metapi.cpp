@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2007-2014 by Vladimir Mirnyy                            *
+ *   Copyright (C) 2009-2014 by Vladimir Mirnyy                            *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -12,37 +12,29 @@
  *   GNU General Public License for more details.                          *
  ***************************************************************************/
 
-#ifndef __finit_h
-#define __finit_h
-
 /** \file
-    \brief Initialization of object factory
+    \brief Program to demonstrate compile-time computation of PI with arbitrary accuracy
+    
+    Two last digits of the resulted PI are not exact due to roundings!
 */
 
-#include "Typelist.h"
+#include <iostream>
 
-template<class TList>
-struct FactoryInit;
+#include "gfft.h"
 
-/// Object factory initialization class
-/** Register all classes from TypeList in
-    object factory Fact
-*/
+using namespace GFFT;
 
-template<class H, class T>
-struct FactoryInit<Loki::Typelist<H,T> > {
-   template<class Fact>
-   static void apply(Fact& f) {
-      f.Register(H::ID,H::Create);
-      FactoryInit<T>::apply(f);
-   }
-};
+using namespace std;
 
-template<>
-struct FactoryInit<Loki::NullType> {
-   template<class Fact>
-   static void apply(Fact&) { }
-};
+static const int Accuracy = 7; // *9 - 64-bit; *4 - 32 bit
 
+int main(int argc, char *argv[])
+{
+  cout.precision(16);
+  typedef PiDecAcc<Accuracy>::Result TPiDec;
+  cout << "Compile-time PI: ";
+  Cout<TPiDec>::apply(cout);
+  cout << endl;
+  cout << "           M_PI: " << M_PI << endl;
+}
 
-#endif /*__finit_h*/

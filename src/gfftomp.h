@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2009 by Volodymyr Myrnyy                                *
+ *   Copyright (C) 2009-2014 by Vladimir Mirnyy                            *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -20,6 +20,9 @@
 */
 
 #include "gfftalg.h"
+#include "gfftstdalg.h"
+#include "gfftalgfreq.h"
+#include "gfftswap.h"
 
 #include <omp.h>
 
@@ -30,7 +33,8 @@ This static constant defines FFT length for that
 OpenMP parallelization is switched on. The overhead is
 too large for transforms with smaller sizes.
 */
-static const unsigned int SwitchToOMP = (1<<12);
+static const int_t SwitchToOMP = (1<<6);
+
 
 /** \class {GFFT::InTimeOMP}
 \brief %OpenMP parallelized Danielson-Lanczos section of the decimation-in-time FFT version.
@@ -48,59 +52,87 @@ threads and so on until NThreads has become equal 1. Then the sequential version
 in template class InTime is inherited.
 \sa InFreqOMP, InTime, InFreq
 */
-template<unsigned int NThreads, unsigned long N, typename T, int S, bool C=((N>NThreads) && (N>=SwitchToOMP))>
+template<int_t NThreads, int_t N, typename NFact, typename T, int S, class W1, int_t LastK = 1, 
+bool C = ((N>NThreads) && (N>(SwitchToOMP<<NThreads)))>
 class InTimeOMP;
 
-template<unsigned int NThreads, unsigned long N, typename T, int S>
-class InTimeOMP<NThreads,N,T,S,true> {
+template<int_t NThreads, int_t N, typename Head, typename Tail, typename T, int S, class W1, int_t LastK>
+class InTimeOMP<NThreads,N,Loki::Typelist<Head,Tail>,T,S,W1,LastK,true> 
+{
    typedef typename TempTypeTrait<T>::Result LocalVType;
-   InTimeOMP<NThreads/2,N/2,T,S> next;
-   static const long IN = N;
+   static const int_t K = Head::first::value;
+   static const int_t M = N/K;
+   static const int_t M2 = M*2;
+   static const int_t N2 = N*2;
+   static const int_t LastK2 = LastK*2;
+   static const int_t NThreadsCreate = (NThreads > K) ? K : NThreads;
+   static const int_t NThreadsNext = (NThreads != NThreadsCreate) ? NThreads-NThreadsCreate : 1;
+   
+   typedef typename IPowBig<W1,K>::Result WK;
+   typedef Loki::Typelist<Pair<typename Head::first, SInt<Head::second::value-1> >, Tail> NFactNext;
+   InTimeOMP<NThreadsNext,M,NFactNext,T,S,WK,K*LastK> dft_str;
+   DFTk_x_Im_T<K,M,T,S,W1,(N<=StaticLoopLimit)> dft_scaled;
 public:
-   void apply(T* data) {
-
-      LocalVType wpr,wpi,t,wtemp,tempr,tempi,wr,wi;
-
-      #pragma omp parallel shared(data,wpr,wpi,t) private(wtemp,tempr,tempi,wr,wi)
-      {
-        #pragma omp sections
-        {
-          #pragma omp section
-          next.apply(data);
-
-          #pragma omp section
-          next.apply(data+N);
-        }
-
-      t = Sin<N,1,LocalVType>::value();
-      wpr = -2.0*t*t;
-      wpi = -S*Sin<N,2,LocalVType>::value();
-      wr = 1.0;
-      wi = 0.0;
-      long i,chunk = N/2;
-
-      #pragma omp for schedule(static,chunk)
-      for (i=0; i<IN; i+=2) {
-        tempr = data[i+N]*wr - data[i+N+1]*wi;
-        tempi = data[i+N]*wi + data[i+N+1]*wr;
-        data[i+N] = data[i]-tempr;
-        data[i+N+1] = data[i+1]-tempi;
-        data[i] += tempr;
-        data[i+1] += tempi;
-
-        wtemp = wr;
-        wr += wr*wpr - wi*wpi;
-        wi += wi*wpr + wtemp*wpi;
-      }
-      } // parallel*/
+   void apply(T* data) 
+   {
+      #pragma omp parallel for shared(data) schedule(static) num_threads(NThreadsCreate)
+      for (int_t m = 0; m < N2; m+=M2)
+	dft_str.apply(data + m);
+      
+      dft_scaled.apply(data);
    }
 };
 
-template<unsigned long N, typename T, int S>
-class InTimeOMP<1,N,T,S,true> : public InTime<N,T,S> { };
+template<int_t N, typename Head, typename Tail, typename T, int S, class W1, int_t LastK>
+class InTimeOMP<1,N,Loki::Typelist<Head,Tail>,T,S,W1,LastK,true> 
+: public InTime<N,Loki::Typelist<Head,Tail>,T,S,W1,LastK> { };
 
-template<unsigned int NThreads, unsigned long N, typename T, int S>
-class InTimeOMP<NThreads,N,T,S,false> : public InTime<N,T,S> { };
+template<int_t NThreads, int_t N, typename NFact, typename T, int S, class W1, int_t LastK>
+class InTimeOMP<NThreads,N,NFact,T,S,W1,LastK,false> : public InTime<N,NFact,T,S,W1,LastK> { };
+
+///////////////////////
+
+template<int_t NThreads, int_t N, typename NFact, typename T, int S, class W1, int_t LastK = 1, 
+bool C = ((N>NThreads) && (N>(SwitchToOMP<<NThreads)))>
+class InTimeOOP_OMP;
+
+template<int_t NThreads, int_t N, typename Head, typename Tail, typename T, int S, class W1, int_t LastK>
+class InTimeOOP_OMP<NThreads,N,Loki::Typelist<Head,Tail>,T,S,W1,LastK,true> 
+{
+   typedef typename TempTypeTrait<T>::Result LocalVType;
+   static const int_t K = Head::first::value;
+   static const int_t M = N/K;
+   static const int_t M2 = M*2;
+   static const int_t N2 = N*2;
+   static const int_t LastK2 = LastK*2;
+   static const int_t NThreadsCreate = (NThreads > K) ? K : NThreads;
+   static const int_t NThreadsNext = (NThreads != NThreadsCreate) ? NThreads-NThreadsCreate : 1;
+   
+   typedef typename IPowBig<W1,K>::Result WK;
+   typedef Loki::Typelist<Pair<typename Head::first, SInt<Head::second::value-1> >, Tail> NFactNext;
+   InTimeOOP_OMP<NThreadsNext,M,NFactNext,T,S,WK,K*LastK> dft_str;
+   DFTk_x_Im_T<K,M,T,S,W1,(N<=StaticLoopLimit)> dft_scaled;
+public:
+
+   void apply(const T* src, T* dst) 
+   {
+      int_t m, lk;
+      #pragma omp parallel for shared(src,dst) private(m,lk) schedule(static) num_threads(NThreadsCreate)
+      for (m = lk = 0; m < N2; m+=M2) {
+	dft_str.apply(src + lk, dst + m);
+	lk += LastK2;
+      }
+      
+      dft_scaled.apply(dst);
+   }
+};
+
+template<int_t N, typename Head, typename Tail, typename T, int S, class W1, int_t LastK>
+class InTimeOOP_OMP<1,N,Loki::Typelist<Head,Tail>,T,S,W1,LastK,true> 
+: public InTimeOOP<N,Loki::Typelist<Head,Tail>,T,S,W1,LastK> { };
+
+template<int_t NThreads, int_t N, typename NFact, typename T, int S, class W1, int_t LastK>
+class InTimeOOP_OMP<NThreads,N,NFact,T,S,W1,LastK,false> : public InTimeOOP<N,NFact,T,S,W1,LastK> { };
 
 
 /** \class {GFFT::InFreqOMP}
@@ -119,92 +151,50 @@ threads and so on until NThreads has become equal 1. Then the sequential version
 in template class InTime is inherited.
 \sa InFreqOMP, InTime, InFreq
 */
-template<unsigned int NThreads, unsigned long N, typename T, int S, 
-bool C=((N>NThreads) && (N>=SwitchToOMP))>
+template<short_t NThreads, int_t N, typename NFact, typename T, int S, class W1, int_t LastK = 1, 
+bool C=((N>NThreads) && (N>(SwitchToOMP<<NThreads)))>
 class InFreqOMP;
 
-template<unsigned int NThreads, unsigned long N, typename T, int S>
-class InFreqOMP<NThreads,N,T,S,true> {
+template<unsigned int NThreads, int_t N, typename Head, typename Tail, typename T, int S, class W1, int_t LastK>
+class InFreqOMP<NThreads,N,Loki::Typelist<Head,Tail>,T,S,W1,LastK,true> 
+{
    typedef typename TempTypeTrait<T>::Result LocalVType;
-   InFreqOMP<NThreads/2,N/2,T,S> next;
-   static const long IN = N;
+   static const int_t K = Head::first::value;
+   static const int_t M = N/K;
+   static const int_t M2 = M*2;
+   static const int_t N2 = N*2;
+   static const int_t LastK2 = LastK*2;
+   static const short_t NThreadsCreate = (NThreads > K) ? K : NThreads;
+   static const short_t NThreadsNext = (NThreads != NThreadsCreate) ? NThreads-NThreadsCreate : 1;
+   
+   typedef typename IPowBig<W1,K>::Result WK;
+   typedef Loki::Typelist<Pair<typename Head::first, SInt<Head::second::value-1> >, Tail> NFactNext;
+   InFreqOMP<NThreadsNext,M,NFactNext,T,S,WK,K*LastK> dft_str;
+   T_DFTk_x_Im<K,M,T,S,W1,true> dft_scaled;
+
 public:
-   void apply(T* data) {
+   void apply(T* data) 
+   {
+      dft_scaled.apply(data);
 
-      LocalVType wtemp,tempr,tempi,wr,wi,wpr,wpi;
-
-      #pragma omp parallel shared(data,wpr,wpi) private(wtemp,tempr,tempi,wr,wi)
-      {
-
-      wtemp = Sin<N,1,LocalVType>::value();
-      wpr = -2.0*wtemp*wtemp;
-      wpi = -S*Sin<N,2,LocalVType>::value();
-      wr = 1.0;
-      wi = 0.0;
-      long i,chunk = N/2;
-
-      #pragma omp for schedule(static,chunk)
-      for (i=0; i<IN; i+=2) {
-        tempr = data[i] - data[i+N];
-        tempi = data[i+1] - data[i+N+1];
-        data[i] += data[i+N];
-        data[i+1] += data[i+N+1];
-        data[i+N] = tempr*wr - tempi*wi;
-        data[i+N+1] = tempi*wr + tempr*wi;
-
-        wtemp = wr;
-        wr += wr*wpr - wi*wpi;
-        wi += wi*wpr + wtemp*wpi;
-      }
-
-      #pragma omp sections
-      {
-        #pragma omp section
-        next.apply(data);
-        #pragma omp section
-        next.apply(data+N);
-      }
-      } // parallel
+      // K times call to dft_str.apply()
+      #pragma omp parallel for shared(data) schedule(static) num_threads(NThreadsCreate)
+      for (int_t m = 0; m < N2; m+=M2)
+	dft_str.apply(data + m);
    }
 };
 
-template<unsigned long N, typename T, int S>
-class InFreqOMP<1,N,T,S,true> : public InFreq<N,T,S> { };
+template<int_t N, typename Head, typename Tail, typename T, int S, class W1, int_t LastK>
+class InFreqOMP<1,N,Loki::Typelist<Head,Tail>,T,S,W1,LastK,true> 
+: public InFreq<N,Loki::Typelist<Head,Tail>,T,S,W1,LastK> { };
 
-template<unsigned int NThreads, unsigned long N, typename T, int S>
-class InFreqOMP<NThreads,N,T,S,false> : public InFreq<N,T,S> { };
+template<short_t NThreads, int_t N, typename NFact, typename T, int S, class W1, int_t LastK>
+class InFreqOMP<NThreads,N,NFact,T,S,W1,LastK,false> : public InFreq<N,NFact,T,S,W1,LastK> { };
 
 
-
-
-// doesn't work
-template<unsigned int NThreads, unsigned long N, typename T>
-class GFFTswapOMP {
-public:
-   void apply(T* data) {
-     unsigned long i,m,j=0;
-     unsigned long n = N;
-     #pragma omp parallel firstprivate(data) private(i,j,m)
-     {
-       #pragma omp for ordered
-         for (i=0; i<2*n-1; i+=2) {
-           if (j>i) {
-             std::swap(data[j], data[i]);
-             std::swap(data[j+1], data[i+1]);
-           }
-           m = n;
-           while (m>=2 && j>=m) {
-             j -= m;
-             m >>= 1;
-           }
-           j += m;
-         }
-     }
-   }
-};
 
 /** \class {GFFT::GFFTswap2OMP}
-\brief Binary reordering paralelized by %OpenMP
+\brief Binary reordering parallelized by %OpenMP
 \tparam NThreads is number of threads
 \tparam P current transform length as power of two
 \tparam T value type of the data array
@@ -213,17 +203,61 @@ public:
         parallelization is meaningless and the sequential implementation GFFTswap2
         is inherited.
 */
-template<unsigned int NThreads, unsigned int P, typename T,
+/*
+template<short_t NThreads, uint_t M, uint_t P, typename T,
 unsigned int I=0, bool C=(((1<<P)>NThreads) && ((1<<P)>=SwitchToOMP))>
 class GFFTswap2OMP;
 
-template<unsigned int NThreads, unsigned int P, typename T, unsigned int I>
-class GFFTswap2OMP<NThreads,P,T,I,true> {
-   static const unsigned long BN = 1<<(I+1);
-   static const unsigned long BR = 1<<(P-I);
-   GFFTswap2OMP<NThreads/2,P,T,I+1> next;
+template<short_t NThreads, uint_t P, typename T, int_t I>
+class GFFTswap2OMP<NThreads,2,P,T,I,true> {
+   static const int_t BN = 1<<(I+1);
+   static const int_t BR = 1<<(P-I);
+   GFFTswap2OMP<NThreads/2,2,P,T,I+1> next;
 public:
-   void apply(T* data, const unsigned long n=0, const unsigned long r=0) {
+   void apply(T* data, const int_t n=0, const int_t r=0) {
+     #pragma omp parallel shared(data)
+     {
+       #pragma omp sections
+       {
+         #pragma omp section
+         next.apply(data, n, r);
+
+         #pragma omp section
+         next.apply(data, n|BN, r|BR);
+       }
+     }
+   }
+};
+
+template<short_t NThreads, uint_t P, typename T>
+class GFFTswap2OMP<NThreads,2,P,T,P,true> {
+public:
+   void apply(T* data, const int_t n, const int_t r) {
+      if (n>r) {
+        swap(data[n],data[r]);
+        swap(data[n+1],data[r+1]);
+      }
+   }
+};
+
+template<int_t P, typename T, int_t I>
+class GFFTswap2OMP<1,2,P,T,I,true> : public GFFTswap2<2,P,T,I> { };
+
+template<int_t P, typename T>
+class GFFTswap2OMP<1,2,P,T,P,true> : public GFFTswap2<2,P,T,P> { };
+
+template<short_t NThreads, int_t P, typename T, int_t I>
+class GFFTswap2OMP<NThreads,2,P,T,I,false> : public GFFTswap2<2,P,T,I> { };
+
+
+template<unsigned int NThreads, uint_t M, uint_t P, typename T,
+template<typename> class Complex, unsigned int I>
+class GFFTswap2OMP<NThreads,M,P,Complex<T>,I,true> {
+   static const int_t BN = 1<<I;
+   static const int_t BR = 1<<(P-I-1);
+   GFFTswap2OMP<NThreads/2,M,P,Complex<T>,I+1> next;
+public:
+   void apply(Complex<T>* data, const int_t n=0, const int_t r=0) {
      #pragma omp parallel shared(data)
      {
        #pragma omp sections
@@ -238,27 +272,28 @@ public:
    }
 };
 
-template<unsigned int NThreads, unsigned int P, typename T>
-class GFFTswap2OMP<NThreads,P,T,P,true> {
+template<unsigned int NThreads, uint_t M, uint_t P, typename T,
+template<typename> class Complex>
+class GFFTswap2OMP<NThreads,M,P,Complex<T>,true> {
 public:
-   void apply(T* data, const unsigned long n, const unsigned long r) {
-      if (n>r) {
+   void apply(Complex<T>* data, const int_t n, const int_t r) {
+      if (n>r)
         swap(data[n],data[r]);
-        swap(data[n+1],data[r+1]);
-      }
    }
 };
 
-template<unsigned int P, typename T, unsigned int I>
-class GFFTswap2OMP<1,P,T,I,true> : public GFFTswap2<P,T,I> { };
+template<uint_t M, uint_t P, typename T, unsigned int I,
+template<typename> class Complex>
+class GFFTswap2OMP<1,M,P,Complex<T>,I,true> : public GFFTswap2<M,P,Complex<T>,I> { };
 
-template<unsigned int P, typename T>
-class GFFTswap2OMP<1,P,T,P,true> : public GFFTswap2<P,T,P> { };
+template<uint_t M, uint_t P, typename T,
+template<typename> class Complex>
+class GFFTswap2OMP<1,M,P,Complex<T>,P,true> : public GFFTswap2<M,P,Complex<T>,P> { };
 
-template<unsigned int NThreads, unsigned int P, typename T, unsigned int I>
-class GFFTswap2OMP<NThreads,P,T,I,false> : public GFFTswap2<P,T,I> { };
-
-
+template<unsigned int NThreads, uint_t M, uint_t P, typename T, unsigned int I,
+template<typename> class Complex>
+class GFFTswap2OMP<NThreads,M,P,Complex<T>,I,false> : public GFFTswap2<M,P,Complex<T>,I> { };
+*/
 
 } //namespace
 
