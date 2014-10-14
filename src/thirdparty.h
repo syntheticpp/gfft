@@ -67,6 +67,10 @@ public:
   {
     init(data, n);
   }
+  DFT_wrapper(const float* data, int_t n) : size(n)
+  {
+    init(data, n);
+  }
   DFT_wrapper(const std::complex<double>* data, int_t n) : size(n)
   {
     init(data, n);
@@ -157,6 +161,10 @@ public:
   {
     init(data, n);
   }
+  FFTW_wrapper(const float* data, int_t n) : size(n)
+  {
+    init(data, n);
+  }
   ~FFTW_wrapper() 
   {
     fftw_free(in);
@@ -165,7 +173,8 @@ public:
   
   T* getdata() const { return out; }
 
-  void init(const double* data, int_t n)
+  template<typename Tp>
+  void init(const Tp* data, int_t n)
   {
     in = (T*)fftw_malloc(sizeof(T)*n);
     out = (T*)fftw_malloc(sizeof(T)*n);
