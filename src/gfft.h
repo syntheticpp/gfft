@@ -26,7 +26,6 @@
 
 #include "Typelist.h"
 #include "Factory.h"
-#include "Singleton.h"
 
 #include "finit.h"
 #include "gfftomp.h"
@@ -34,5 +33,8 @@
 #include "gfftcaller.h"
 #include "gfftgen.h"
 
+#if FULLOUTPUT == 1 
+#define FOUT
+#endif
 
 #endif /*__gfft_h*/

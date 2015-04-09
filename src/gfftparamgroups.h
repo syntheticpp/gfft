@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2012-2014 by Vladimir Mirnyy                            *
+ *   Copyright (C) 2012-2015 by Vladimir Mirnyy                            *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -53,19 +53,20 @@ struct TransformTypeGroup
 /// \ingroup gr_groups
 struct ParallelizationGroup
 {
-  typedef TYPELIST_3(Serial,OpenMP<2>,OpenMP<4>) FullList;
+//  typedef TYPELIST_4(Serial,OpenMP<2>,OpenMP<3>,OpenMP<4>) FullList;
+  typedef TYPELIST_4(OpenMP<1>,OpenMP<2>,OpenMP<4>,OpenMP<8>) FullList;
   static const uint_t Length = 3;
   typedef Serial Default;
 };
 
-/// \brief Lists all acceptable decimation versions
-/// \ingroup gr_groups
-struct DecimationGroup
-{
-  typedef TYPELIST_2(INTIME,INFREQ) FullList;
-  static const uint_t Length = 2;
-  typedef INFREQ Default;
-};
+// /// \brief Lists all acceptable decimation versions
+// /// \ingroup gr_groups
+// struct DecimationGroup
+// {
+//   typedef TYPELIST_2(INTIME,INFREQ) FullList;
+//   static const uint_t Length = 2;
+//   typedef INFREQ Default;
+// };
 
 /// \brief Lists in-place and out-of-place FFT algorithms
 /// \ingroup gr_groups

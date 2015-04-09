@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2006-2014 by Vladimir Mirnyy                            *
+ *   Copyright (C) 2006-2015 by Vladimir Mirnyy                            *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -49,6 +49,29 @@ class DFTk_inp<N,M,VType,S,false>
    
   T m_c[K], m_s[K];
   
+  void _transform(CT* data, const CT* s, const CT* d) 
+  {
+    for (int_t i=1; i<K+1; ++i) {
+      CT t1(0,0), t2(0,0);
+      for (int_t j=0; j<K; ++j) {
+	const bool sign_change = (i*(j+1) % N) > K;
+	const int_t kk = (i+j*i)%N;
+	const int_t k = (kk>K) ? N-kk-1 : kk-1;
+	const T s1 = m_s[k]*d[j].imag();
+	const T s2 = m_s[k]*d[j].real();
+	t1 += m_c[k]*s[j];
+	CT tt(sign_change ? -s1 : s1, sign_change ? s2 : -s2);
+	t2 += tt;
+      }
+      const int_t k = i*M;
+      data[k] = data[0] + t1 + t2;
+      data[NM-k] = data[0] + t1 - t2;
+    }
+    
+    for (int_t i=0; i<K; ++i) 
+      data[0] += s[i];
+  }
+  
 public:
   DFTk_inp() 
   { 
@@ -63,26 +86,7 @@ public:
       s[i] = data[k] + data[NM-k];
       d[i] = data[k] - data[NM-k];
     }
-    
-    for (int_t i=1; i<K+1; ++i) {
-      CT t1(0,0), t2(0,0);
-      for (int_t j=0; j<K; ++j) {
-	const bool sign_change = (i*(j+1) % N) > K;
-	const int_t kk = (i+j*i)%N;
-	const int_t k = (kk>K) ? N-kk-1 : kk-1;
-	const T s1 = m_s[k]*d[j].imag();
-	const T s2 = m_s[k]*d[j].real();
-	t1 += m_c[k]*s[j];
-	CT tt(sign_change ? -s1 : s1, sign_change ? s2 : -s2);
-	t2 += tt;
-      }
-      const int_t k = i*M;
-      data[k] = data[0] + t1 + t2;
-      data[NM-k] = data[0] + t1 - t2;
-    }
-    
-    for (int_t i=0; i<K; ++i) 
-      data[0] += s[i];
+    _transform(data, s, d);
   }
 
   void apply(CT* data, const CT* w) 
@@ -95,26 +99,13 @@ public:
       s[i] = t1 + t2;
       d[i] = t1 - t2;
     }
-    
-    for (int_t i=1; i<K+1; ++i) {
-      CT t1(0,0), t2(0,0);
-      for (int_t j=0; j<K; ++j) {
-	const bool sign_change = (i*(j+1) % N) > K;
-	const int_t kk = (i+j*i)%N;
-	const int_t k = (kk>K) ? N-kk-1 : kk-1;
-	const T s1 = m_s[k]*d[j].imag();
-	const T s2 = m_s[k]*d[j].real();
-	t1 += m_c[k]*s[j];
-	CT tt(sign_change ? -s1 : s1, sign_change ? s2 : -s2);
-	t2 += tt;
-      }
-      const int_t k = i*M;
-      data[k] = data[0] + t1 + t2;
-      data[NM-k] = data[0] + t1 - t2;
-    }
-    
-    for (int_t i=0; i<K; ++i) 
-      data[0] += s[i];
+    _transform(data, s, d);
+  }
+
+  void apply_m(CT* data, const CT* w) 
+  { 
+    data[0] *= w[0];
+    apply(data, w+1);
   }
 };
 
@@ -137,7 +128,7 @@ public:
   { 
       CT sum(data[I10] + data[I20]);
       CT dif(m_coef * (data[I10] - data[I20]));
-      CT t(data[0] - 0.5*sum);
+      CT t(data[0] - static_cast<T>(0.5)*sum);
       data[0] += sum;
       data[I10] = CT(t.real() + dif.imag(), t.imag() - dif.real());
       data[I20] = CT(t.real() - dif.imag(), t.imag() + dif.real());
@@ -149,10 +140,15 @@ public:
 
       CT sum(t1 + t2);
       CT dif(m_coef * (t1 - t2));
-      CT t(data[0] - 0.5*sum);
+      CT t(data[0] - static_cast<T>(0.5)*sum);
       data[0] += sum;
       data[I10] = CT(t.real() + dif.imag(), t.imag() - dif.real());
       data[I20] = CT(t.real() - dif.imag(), t.imag() + dif.real());
+  }
+  void apply_m(CT* data, const CT* w) 
+  { 
+      data[0] *= w[0];
+      apply(data, w+1);
   }
 };
 
@@ -164,16 +160,23 @@ class DFTk_inp<2,M,VType,S,false>
 public:
   void apply(CT* data) 
   { 
-     CT t(data[M]);
+     const CT t(data[M]);
      data[M] = data[0] - t;
      data[0] += t;
   }
   // For decimation-in-time
   void apply(CT* data, const CT* w) 
   { 
-     CT t(data[M] * (*w));
+     const CT t(data[M] * (*w));
      data[M] = data[0] - t;
      data[0] += t;
+  }
+  void apply_m(CT* data, const CT* w) 
+  { 
+     const CT t0(data[0] * w[0]);
+     const CT t1(data[M] * w[1]);
+     data[M] = t0-t1;
+     data[0] = t0+t1;
   }
   // For decimation-in-frequency
 //   void apply(const Complex<T>* w, Complex<T>* data) 
@@ -221,8 +224,8 @@ public:
     CT s[K], d[K];
     for (int_t i=0; i<K; ++i) {
       const int_t k = (i+1)*SI;
-      s[i] = src[k]   + src[NSI-k];
-      d[i] = src[k]   - src[NSI-k];
+      s[i] = src[k] + src[NSI-k];
+      d[i] = src[k] - src[NSI-k];
     }
     
     for (int_t i=1; i<K+1; ++i) {
@@ -266,7 +269,7 @@ public:
   { 
       CT s(src[SI] + src[SI2]);
       CT d(m_coef * (src[SI] - src[SI2]));
-      CT t(src[0] - 0.5*s);
+      CT t(src[0] - static_cast<T>(0.5)*s);
       dst[0]   = src[0] + s;
       dst[DI]  = CT(t.real() + d.imag(), t.imag() - d.real());
       dst[DI2] = CT(t.real() - d.imag(), t.imag() + d.real());     

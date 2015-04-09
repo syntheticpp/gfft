@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2006-2014 by Vladimir Mirnyy                            *
+ *   Copyright (C) 2006-2015 by Vladimir Mirnyy                            *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -124,6 +124,21 @@ public:
    }
 };
 
+template<typename T>
+class GFFTswap2<2,2,T,0> {
+public:
+   void apply(T* data, int_t n=0, int_t r=0) {
+     std::swap(data[2],data[4]);
+     std::swap(data[3],data[5]);
+   }
+};
+
+template<typename T>
+class GFFTswap2<2,1,T,0> {
+public:
+   void apply(T* data, int_t n=0, int_t r=0) { }
+};
+
 /// Binary reordering of array elements
 /*!
 \tparam M^P length of the data
@@ -202,6 +217,14 @@ public:
    }
 };
 
+template<typename T,
+template<typename> class Complex>
+class GFFTswap2<2,2,Complex<T>,0> {
+public:
+   void apply(Complex<T>* data, int_t n=0, int_t r=0) {
+      swap(data[1],data[2]);
+   }
+};
 
 /// Reordering of data for real-valued transforms
 /*!
@@ -315,7 +338,7 @@ public:
 // Policy for a definition of forward FFT
 template<int_t N, typename T>
 struct Forward {
-   enum { Sign = 1 };
+   static const int Sign = 1;
    void apply(T*) { }
    void apply(const T*, T*) { }
 };
@@ -323,7 +346,7 @@ struct Forward {
 template<int_t N, typename T,
 template<typename> class Complex>
 struct Forward<N,Complex<T> > {
-   enum { Sign = 1 };
+   static const int Sign = 1;
    void apply(Complex<T>*) { }
    void apply(const Complex<T>*, Complex<T>*) { }
 };
@@ -331,7 +354,7 @@ struct Forward<N,Complex<T> > {
 // Policy for a definition of backward FFT
 template<int_t N, typename T>
 struct Backward {
-   enum { Sign = -1 };
+   static const int Sign = -1;
    void apply(T* data) {
       for (T* i=data; i<data+2*N; ++i) *i/=N;
    }
@@ -341,7 +364,7 @@ struct Backward {
 template<int_t N, typename T,
 template<typename> class Complex>
 struct Backward<N,Complex<T> > {
-   enum { Sign = -1 };
+   static const int Sign = -1;
    void apply(Complex<T>* data) {
       for (int_t i=0; i<N; ++i) {
         data[i]/=N;

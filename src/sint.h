@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2009-2014 by Vladimir Mirnyy                            *
+ *   Copyright (C) 2009-2015 by Vladimir Mirnyy                            *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -31,6 +31,7 @@ typedef unsigned short short_t;
 */
 template<int_t N>
 struct SInt {
+  typedef int_t value_type;
   static const int_t value = N;
 };
 
@@ -53,5 +54,11 @@ STATIC_INTEGER_CLASS(long, long)
 STATIC_INTEGER_CLASS(unsigned long, ulong)
 #undef STATIC_INTEGER_CLASS
 
+
+template<typename T1, typename T2>
+struct Pair {
+  typedef T1 first;
+  typedef T2 second;
+};
 
 #endif
