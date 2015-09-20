@@ -39,6 +39,14 @@ static const char ValueType_Name[][15] = {"    double    ", "     float    ", "c
 static const char Place_Name[][17] = {"    in-place    ", "  out-of-place  "};
 
 
+double gigaComplexFLOPS(int N, double nsec)
+{
+    if (nsec == 0) {
+        return 0;
+    }
+    return 5.0 * N * log2(N) / nsec;
+}
+
 template<class T>
 class GFFTbenchBase
 {
@@ -229,6 +237,7 @@ public:
      t2 = microsec_clock::universal_time();
      td = t2 - t1;
      double rt = (td.total_seconds()*1000000+td.fractional_seconds())/(3.*it*1e+6);
+     rt = gigaComplexFLOPS(H::Len, 1e9 * rt);
      Base::print_line(H::TransformType::ID,H::ValueType::ID,H::PlaceType::ID,H::ParallType::ID,H::Len,rt);
 
      delete [] data;

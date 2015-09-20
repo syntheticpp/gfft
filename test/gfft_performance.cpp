@@ -26,12 +26,12 @@ using namespace GFFT;
 void print_header() 
 {
   cout<<"---------------------------------------------------------------------------------"<<endl;
-  cout<<" Direction        Value type          Place       N-threads    Length   Time [s] "<<endl;
+  cout<<" Direction        Value type          Place       N-threads    Length   GFLOPS "<<endl;
   cout<<"---------------------------------------------------------------------------------"<<endl;
 }
 
-static const unsigned int MinP = 2;
-static const unsigned int MaxP = 10;
+static const unsigned int MinP = 1;
+static const unsigned int MaxP = 14;
 
 int main(int argc, char *argv[])
 {
@@ -42,14 +42,14 @@ int main(int argc, char *argv[])
    // Single-threaded out-of-place transforms
 //    typedef GenerateTransform<NList, GFFT::DOUBLE, TransformTypeGroup::Default> List_ds;
 //    typedef GenerateTransform<NList, GFFT::FLOAT, TransformTypeGroup::Default>  List_fs;
-//    typedef GenerateTransform<NList, GFFT::COMPLEX_DOUBLE, TransformTypeGroup::Default> List_cds;
+    typedef GenerateTransform<NList, GFFT::COMPLEX_DOUBLE, TransformTypeGroup::Default> List_cds;
 //    typedef GenerateTransform<NList, GFFT::COMPLEX_FLOAT, TransformTypeGroup::Default>  List_cfs;
 
    // Single- and multi-threaded out-of-place transforms
-   typedef GenerateTransform<NList, GFFT::DOUBLE, TransformTypeGroup::Default, SIntID<1>, OpenMP<4>, OUT_OF_PLACE> List_dp;
+//   typedef GenerateTransform<NList, GFFT::DOUBLE, TransformTypeGroup::Default, SIntID<1>, OpenMP<4>, OUT_OF_PLACE> List_dp;
 //   typedef GenerateTransform<NList, GFFT::DOUBLE, TransformTypeGroup::Default, SIntID<1>, ParallelizationGroup::FullList, OUT_OF_PLACE> List_dp;
 //    typedef GenerateTransform<NList, GFFT::FLOAT, TransformTypeGroup::Default, SIntID<1>, ParallelizationGroup::FullList, OUT_OF_PLACE>  List_fp;
-//    typedef GenerateTransform<NList, GFFT::COMPLEX_DOUBLE, TransformTypeGroup::Default, SIntID<1>, ParallelizationGroup::FullList, OUT_OF_PLACE> List_cdp;
+   typedef GenerateTransform<NList, GFFT::COMPLEX_DOUBLE, TransformTypeGroup::Default, SIntID<1>, ParallelizationGroup::FullList, OUT_OF_PLACE> List_cdp;
 //    typedef GenerateTransform<NList, GFFT::COMPLEX_FLOAT, TransformTypeGroup::Default, SIntID<1>, ParallelizationGroup::FullList, OUT_OF_PLACE>  List_cfp;
 
    cout.precision(4);
@@ -65,15 +65,15 @@ int main(int argc, char *argv[])
 //    bench_cds.cputime();
 //    bench_cfs.cputime();
 
-   GFFTbench<List_dp::Result,List_dp::PlaceType> bench_dp;
+//   GFFTbench<List_dp::Result,List_dp::PlaceType> bench_dp;
 //    GFFTbench<List_fp::Result,List_fp::PlaceType> bench_fp;
-//    GFFTbench<List_cdp::Result,List_cdp::PlaceType> bench_cdp;
+    GFFTbench<List_cdp::Result,List_cdp::PlaceType> bench_cdp;
 //    GFFTbench<List_cfp::Result,List_cfp::PlaceType> bench_cfp;
 
-   //print_header();
-   bench_dp.realtime();
+   print_header();
+   //bench_dp.realtime();
 //    bench_fp.realtime();
-//    bench_cdp.realtime();
+       bench_cdp.realtime();
 //    bench_cfp.realtime();
 
    return 0;

@@ -66,7 +66,7 @@ add_definitions(-DNUM=${NUM} -DFULLOUTPUT=${FULLOUTPUT} -DTYPE=${TYPE} -DPLACE=$
 
 target_link_libraries(gfft stdc++ gomp)
 target_link_libraries(metapi c m stdc++ gomp)
-target_link_libraries(metasqrt c m stdc++ gomp)
+#target_link_libraries(metasqrt c m stdc++ gomp)
 
 endif(CMAKE_CXX_COMPILER MATCHES "icpc")
 
